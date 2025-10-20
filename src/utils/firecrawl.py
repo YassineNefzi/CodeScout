@@ -1,4 +1,4 @@
-from firecrawl import FirecrawlApp, V1ScrapeOptions
+from firecrawl import FirecrawlApp
 
 from ..config.settings import get_settings
 from ..config.logging import Logger
@@ -21,9 +21,9 @@ class FirecrawlService:
             result = self.app.search(
                 query=f"{query} company pricing",
                 limit=num_results,
-                scrape_options=V1ScrapeOptions(
-                    formats=["markdown"]
-                )
+                scrape_options={
+                    "formats": ["markdown"]
+                }
             )
             return result
         except Exception as e:

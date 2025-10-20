@@ -29,18 +29,26 @@ class Workflow:
         return graph.compile()
 
     def _extract_tools_step(self, state: ResearchState) -> Dict[str, Any]:
-
         self.logger.info(f"🔍 Finding articles about: {state.query}")
 
         article_query = f"{state.query} tools comparison best alternatives"
         search_results = self.firecrawl.search_companies(article_query, num_results=3)
 
+        # Handle both empty list (error case) and SearchData object
+        if not search_results or isinstance(search_results, list):
+            self.logger.warning("No search results found")
+            return {"extracted_tools": []}
+
+        # Access results - check what attribute the SearchData object has
+        results = getattr(search_results, 'results', getattr(search_results, 'data', []))
+
         all_content = ""
-        for result in search_results.data:
+        for result in results:
             url = result.get("url", "")
             scraped = self.firecrawl.scrape_company_page(url)
             if scraped:
-                all_content + scraped.markdown[:1500] + "\n\n"
+                # Fixed: was missing assignment operator
+                all_content += scraped.markdown[:1500] + "\n\n"
 
         messages = [
             SystemMessage(content=self.prompts.TOOL_EXTRACTION_SYSTEM),
@@ -57,7 +65,7 @@ class Workflow:
             print(f"Extracted tools: {', '.join(tool_names[:5])}")
             return {"extracted_tools": tool_names}
         except Exception as e:
-            print(e)
+            self.logger.exception(f"Error extracting tools: {e}")
             return {"extracted_tools": []}
 
     def _analyze_company_content(self, company_name: str, content: str) -> CompanyAnalysis:
@@ -72,7 +80,7 @@ class Workflow:
             analysis = structured_llm.invoke(messages)
             return analysis
         except Exception as e:
-            print(e)
+            self.logger.exception(f"Error analyzing company: {e}")
             return CompanyAnalysis(
                 pricing_model="Unknown",
                 is_open_source=None,
@@ -83,16 +91,22 @@ class Workflow:
                 integration_capabilities=[],
             )
 
-
     def _research_step(self, state: ResearchState) -> Dict[str, Any]:
         extracted_tools = getattr(state, "extracted_tools", [])
 
         if not extracted_tools:
             self.logger.warning("⚠️ No extracted tools found, falling back to direct search")
             search_results = self.firecrawl.search_companies(state.query, num_results=4)
+
+            # Handle both empty list and SearchData object
+            if not search_results or isinstance(search_results, list):
+                self.logger.error("No search results in fallback")
+                return {"companies": []}
+
+            results = getattr(search_results, 'results', getattr(search_results, 'data', []))
             tool_names = [
                 result.get("metadata", {}).get("title", "Unknown")
-                for result in search_results.data
+                for result in results
             ]
         else:
             tool_names = extracted_tools[:4]
@@ -103,8 +117,14 @@ class Workflow:
         for tool_name in tool_names:
             tool_search_results = self.firecrawl.search_companies(tool_name + " official site", num_results=1)
 
-            if tool_search_results:
-                result = tool_search_results.data[0]
+            # Handle empty results
+            if not tool_search_results or isinstance(tool_search_results, list):
+                continue
+
+            results = getattr(tool_search_results, 'results', getattr(tool_search_results, 'data', []))
+
+            if results:
+                result = results[0]
                 url = result.get("url", "")
 
                 company = CompanyInfo(
@@ -133,11 +153,10 @@ class Workflow:
         return {"companies": companies}
 
     def _analyze_step(self, state: ResearchState) -> Dict[str, Any]:
-
         self.logger.info("Generating recommendations")
 
         company_data = ", ".join([
-            company.json() for company in state.companies
+            company.model_dump_json() for company in state.companies
         ])
 
         messages = [
