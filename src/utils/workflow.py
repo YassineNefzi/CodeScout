@@ -34,46 +34,66 @@ class Workflow:
         article_query = f"{state.query} tools comparison best alternatives"
         search_results = self.firecrawl.search_companies(article_query, num_results=3)
 
-        # Handle both empty list (error case) and SearchData object
         if not search_results or isinstance(search_results, list):
             self.logger.warning("No search results found")
             return {"extracted_tools": []}
 
-        # Access results - check what attribute the SearchData object has
-        results = getattr(search_results, 'results', getattr(search_results, 'data', []))
+        results = search_results.web if hasattr(search_results, "web") else []
 
         all_content = ""
         for result in results:
-            url = result.get("url", "")
+            url = result.url if hasattr(result, "url") else ""
             scraped = self.firecrawl.scrape_company_page(url)
             if scraped:
-                # Fixed: was missing assignment operator
                 all_content += scraped.markdown[:1500] + "\n\n"
 
         messages = [
             SystemMessage(content=self.prompts.TOOL_EXTRACTION_SYSTEM),
-            HumanMessage(content=self.prompts.tool_extraction_user(state.query, all_content))
+            HumanMessage(
+                content=self.prompts.tool_extraction_user(state.query, all_content)
+            ),
         ]
 
         try:
             response = self.llm.invoke(messages)
-            tool_names = [
-                name.strip()
-                for name in response.content.strip().split("\n")
-                if name.strip()
-            ]
-            print(f"Extracted tools: {', '.join(tool_names[:5])}")
+
+            raw_response = response.content.strip()
+
+            tool_names = []
+            for line in raw_response.split("\n"):
+                line = line.strip()
+                if line and not any(
+                    [
+                        line.lower().startswith("based on"),
+                        line.lower().startswith("here"),
+                        line.lower().startswith("the following"),
+                        line.lower().startswith("i extracted"),
+                        line.endswith(":"),
+                        len(line) > 50,
+                    ]
+                ):
+                    cleaned = line.lstrip("0123456789.-*• ")
+                    if cleaned:
+                        tool_names.append(cleaned)
+
+            tool_names = tool_names[:5]
+
+            print(f"Extracted tools: {', '.join(tool_names)}")
             return {"extracted_tools": tool_names}
         except Exception as e:
             self.logger.exception(f"Error extracting tools: {e}")
             return {"extracted_tools": []}
 
-    def _analyze_company_content(self, company_name: str, content: str) -> CompanyAnalysis:
+    def _analyze_company_content(
+        self, company_name: str, content: str
+    ) -> CompanyAnalysis:
         structured_llm = self.llm.with_structured_output(CompanyAnalysis)
 
         messages = [
             SystemMessage(content=self.prompts.TOOL_ANALYSIS_SYSTEM),
-            HumanMessage(content=self.prompts.tool_analysis_user(company_name, content))
+            HumanMessage(
+                content=self.prompts.tool_analysis_user(company_name, content)
+            ),
         ]
 
         try:
@@ -95,17 +115,18 @@ class Workflow:
         extracted_tools = getattr(state, "extracted_tools", [])
 
         if not extracted_tools:
-            self.logger.warning("⚠️ No extracted tools found, falling back to direct search")
+            self.logger.warning(
+                "⚠️ No extracted tools found, falling back to direct search"
+            )
             search_results = self.firecrawl.search_companies(state.query, num_results=4)
 
-            # Handle both empty list and SearchData object
             if not search_results or isinstance(search_results, list):
                 self.logger.error("No search results in fallback")
                 return {"companies": []}
 
-            results = getattr(search_results, 'results', getattr(search_results, 'data', []))
+            results = search_results.web if hasattr(search_results, "web") else []
             tool_names = [
-                result.get("metadata", {}).get("title", "Unknown")
+                result.title if hasattr(result, "title") else "Unknown"
                 for result in results
             ]
         else:
@@ -115,53 +136,110 @@ class Workflow:
 
         companies = []
         for tool_name in tool_names:
-            tool_search_results = self.firecrawl.search_companies(tool_name + " official site", num_results=1)
+            self.logger.info(f"📍 Researching: {tool_name}")
 
-            # Handle empty results
+            tool_search_results = self.firecrawl.search_companies(
+                tool_name + " official site", num_results=1
+            )
+
             if not tool_search_results or isinstance(tool_search_results, list):
+                self.logger.warning(f"⚠️ No search results for {tool_name}")
                 continue
 
-            results = getattr(tool_search_results, 'results', getattr(tool_search_results, 'data', []))
+            results = (
+                tool_search_results.web if hasattr(tool_search_results, "web") else []
+            )
+
+            self.logger.debug(f"Found {len(results)} results for {tool_name}")
 
             if results:
                 result = results[0]
-                url = result.get("url", "")
+                url = result.url if hasattr(result, "url") else ""
+
+                search_markdown = result.markdown if hasattr(result, "markdown") else ""
+                self.logger.debug(
+                    f"Search markdown length: {len(search_markdown)} chars"
+                )
 
                 company = CompanyInfo(
                     name=tool_name,
-                    description=result.get("markdown", ""),
+                    description=search_markdown[:200]
+                    if search_markdown
+                    else "No description",
                     website=url,
                     tech_stack=[],
-                    competitors=[]
+                    competitors=[],
                 )
 
+                self.logger.info(f"🔎 Attempting to scrape {url}")
                 scraped = self.firecrawl.scrape_company_page(url)
-                if scraped:
-                    content = scraped.markdown
-                    analysis = self._analyze_company_content(company.name, content)
 
-                    company.pricing_model = analysis.pricing_model
-                    company.is_open_source = analysis.is_open_source
-                    company.tech_stack = analysis.tech_stack
-                    company.description = analysis.description
-                    company.api_available = analysis.api_available
-                    company.language_support = analysis.language_support
-                    company.integration_capabilities = analysis.integration_capabilities
+                content = None
+                if scraped:
+                    self.logger.debug(f"Scraped type: {type(scraped)}")
+                    if hasattr(scraped, "markdown"):
+                        content = scraped.markdown
+                        self.logger.info(
+                            f"✅ Using scraped content ({len(content)} chars)"
+                        )
+                    else:
+                        self.logger.warning(
+                            f"⚠️ Scraped object has no 'markdown' attribute"
+                        )
+                        self.logger.debug(f"Scraped object attributes: {dir(scraped)}")
+                else:
+                    self.logger.warning(f"⚠️ Scraping returned None")
+
+                if not content and search_markdown:
+                    content = search_markdown
+                    self.logger.info(
+                        f"🔄 Using search markdown as fallback ({len(content)} chars)"
+                    )
+
+                if not content:
+                    self.logger.error(
+                        f"❌ No content available for {tool_name}, skipping"
+                    )
+                    continue
+
+                self.logger.info(f"🧠 Analyzing {tool_name}")
+                analysis = self._analyze_company_content(company.name, content)
+
+                company.pricing_model = analysis.pricing_model
+                company.is_open_source = analysis.is_open_source
+                company.tech_stack = analysis.tech_stack
+                company.description = analysis.description
+                company.api_available = analysis.api_available
+                company.language_support = analysis.language_support
+                company.integration_capabilities = analysis.integration_capabilities
 
                 companies.append(company)
+                self.logger.info(f"✅ Successfully researched {tool_name}")
 
+        self.logger.info(f"📋 Total companies researched: {len(companies)}")
         return {"companies": companies}
 
     def _analyze_step(self, state: ResearchState) -> Dict[str, Any]:
-        self.logger.info("Generating recommendations")
+        self.logger.info("💡 Generating recommendations")
 
-        company_data = ", ".join([
-            company.model_dump_json() for company in state.companies
-        ])
+        if not state.companies:
+            self.logger.warning("⚠️ No companies to analyze")
+            return {
+                "analysis": "No tools were found to analyze. Please try a different query."
+            }
+
+        company_data = "\n\n".join(
+            [
+                f"Tool: {company.name}\n" + company.model_dump_json(indent=2)
+                for company in state.companies
+            ]
+        )
 
         messages = [
             SystemMessage(content=self.prompts.RECOMMENDATIONS_SYSTEM),
-            HumanMessage(content=self.prompts.recommendations_user(state.query, company_data))
+            HumanMessage(
+                content=self.prompts.recommendations_user(state.query, company_data)
+            ),
         ]
 
         response = self.llm.invoke(messages)

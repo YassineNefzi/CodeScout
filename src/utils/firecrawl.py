@@ -21,22 +21,23 @@ class FirecrawlService:
             result = self.app.search(
                 query=f"{query} company pricing",
                 limit=num_results,
-                scrape_options={
-                    "formats": ["markdown"]
-                }
+                scrape_options={"formats": ["markdown"]},
             )
+            self.logger.debug(f"Search successful. Result type: {type(result)}")
             return result
         except Exception as e:
-            self.logger.exception(e)
+            self.logger.exception(f"Search failed for query '{query}': {e}")
             return []
 
     def scrape_company_page(self, url: str):
         try:
-            result = self.app.scrape(
-                url=url,
-                formats=["markdown"]
+            result = self.app.scrape(url=url, formats=["markdown"])
+            self.logger.debug(
+                f"Scrape successful for {url}. Result type: {type(result)}"
             )
+            if hasattr(result, "markdown"):
+                self.logger.debug(f"Markdown length: {len(result.markdown)} chars")
             return result
         except Exception as e:
-            self.logger.exception(e)
+            self.logger.exception(f"Scrape failed for {url}: {e}")
             return None
