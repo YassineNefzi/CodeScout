@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     DEFAULT_MODEL: str = "llama-3.1-8b-instant"
     DEFAULT_TEMPERATURE: float = 0.0
 
+    FIRECRAWL_API_KEY: str = os.environ.get("FIRECRAWL_API_KEY")
+
 
 @lru_cache()
 def get_settings():
