@@ -24,33 +24,16 @@ CodeScout is an intelligent research agent that helps developers find the best t
 
 ```mermaid
 graph TD
-    A[👤 User Query<br/>'google cloud alternatives'] --> B[🔍 Stage 1: Extract Tools]
+    A[👤 User Query] --> B[🔍 Stage 1: Extract Tools]
+    B --> C[🔬 Stage 2: Research Each Tool]
+    C --> D[💡 Stage 3: Generate Recommendations]
 
-    B --> B1[Search Articles]
-    B1 --> B2[Scrape Content]
-    B2 --> B3[LLM Extracts Tool Names]
-    B3 --> C[📋 Tool List<br/>AWS, Azure, DigitalOcean...]
+    %% Light/Dark Mode Friendly Styles
+    style A fill:#4A5568,stroke:#CBD5E0,color:white
+    style B fill:#2B6CB0,stroke:#CBD5E0,color:white
+    style C fill:#6B46C1,stroke:#E9D8FD,color:white
+    style D fill:#2F855A,stroke:#C6F6D5,color:white
 
-    C --> D[🔬 Stage 2: Research Each Tool]
-
-    D --> D1[Find Official Site]
-    D1 --> D2[Scrape Homepage]
-    D2 --> D3[LLM Analyzes Features]
-    D3 --> E[📊 Structured Data<br/>Pricing, Tech Stack, APIs...]
-
-    E --> F[💡 Stage 3: Generate Recommendations]
-
-    F --> F1[Compare All Tools]
-    F1 --> F2[LLM Generates Insights]
-    F2 --> G[✅ Final Report<br/>Best Choice + Reasoning]
-
-    style A fill:#e1f5ff
-    style C fill:#fff4e1
-    style E fill:#fff4e1
-    style G fill:#e8f5e9
-    style B fill:#f3e5f5
-    style D fill:#f3e5f5
-    style F fill:#f3e5f5
 ```
 
 ### The Workflow Explained
@@ -81,8 +64,7 @@ graph TD
    ```bash
    uv venv
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
-   uv pip install -r requirements.txt
-   ```
+   uv sync 
 
 3. **Set up environment variables**
 
@@ -136,50 +118,6 @@ Main technical advantage: AWS has a vast ecosystem of services and tools, making
 
 ---
 
-## 📦 Project Structure
-
-```
-codescout/
-├── main.py                    # Entry point with CLI interface
-├── src/
-│   ├── config/
-│   │   ├── settings.py        # Environment configuration
-│   │   ├── schemas.py         # Pydantic models
-│   │   ├── prompts.py         # LLM prompts
-│   │   └── logging.py         # Logging setup
-│   └── utils/
-│       ├── workflow.py        # LangGraph workflow
-│       ├── firecrawl.py       # Web scraping service
-│       └── llm.py             # Groq LLM integration
-├── requirements.txt
-└── .env
-```
-
----
-
-## 🔧 Configuration
-
-### Customize Number of Results
-
-In `workflow.py`:
-```python
-# Number of articles to scrape
-search_results = self.firecrawl.search_companies(query, num_results=3)
-
-# Number of tools to research
-tool_names = extracted_tools[:4]
-```
-
-### Change LLM Model
-
-In `src/utils/llm.py`:
-```python
-model = "llama-3.1-8b-instant"
-# Other options: llama-3.1-70b-versatile, mixtral-8x7b-32768
-```
-
----
-
 ## 🎨 Tech Stack
 
 - **[LangGraph](https://github.com/langchain-ai/langgraph)** - Multi-agent workflow orchestration
@@ -189,13 +127,3 @@ model = "llama-3.1-8b-instant"
 - **[LangChain](https://www.langchain.com/)** - LLM framework
 
 ---
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to submit a Pull Request.
-
----
-
-<div align="center">
-  <strong>⭐ If you find this project useful, please star it!</strong>
-</div>
