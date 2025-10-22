@@ -1,7 +1,7 @@
 # 🔍 CodeScout - AI-Powered Developer Tools Research Agent
 
 <div align="center">
-  <img src="assets/codescout.png" alt="CodeScout Logo" width="200"/>
+  <img src="assets/codescout.png" alt="CodeScout Logo"/>
   <p><i>Automatically discover, analyze, and compare developer tools using AI</i></p>
 </div>
 
